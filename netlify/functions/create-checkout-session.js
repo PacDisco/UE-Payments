@@ -35,6 +35,11 @@ exports.handler = async (event) => {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email || undefined,
+      custom_text: {
+    submit: {
+      message: "Total amount includes a 3% processing fee."
+    }
+  },
       line_items: [
         {
           price_data: {
