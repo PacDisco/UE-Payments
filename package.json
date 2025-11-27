@@ -1,0 +1,10 @@
+{
+  "name": "ue-stripe-payments",
+  "version": "1.0.0",
+  "description": "Stripe checkout function for Unearthed Education",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "stripe": "^14.0.0"
+  }
+}
