@@ -2,37 +2,33 @@ const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 exports.handler = async (event) => {
-  try {
-    const body = JSON.parse(event.body);
+  console.log("RAW EVENT BODY:", event.body); // 👈 ADD THIS
 
-    const amount = body.amount; // amount in whole NZD (example: 250)
-    const email  = body.email;  // optional
+  try {
+    const body = JSON.parse(event.body || "{}");
+
+    console.log("PARSED BODY:", body); // 👈 AND THIS
+
+    const amount = body.amount;
+    const email  = body.email;
 
     if (!amount) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: "Amount is required" }),
-      };
+      console.log("NO AMOUNT RECEIVED"); // 👈 DEBUG
     }
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email || undefined,
-
       line_items: [
         {
           price_data: {
             currency: "nzd",
-            product_data: {
-              name: "Unearthed Education Program Payment",
-            },
-            unit_amount: Number(amount) * 100, // convert to cents
+            product_data: { name: "Unearthed Education Program Payment" },
+            unit_amount: Number(amount) * 100,
           },
-          quantity: 1,
-        },
+          quantity: 1
+        }
       ],
-
-      // your final redirect URL
       success_url: "https://unearthededucation.org/pages/registration-received",
       cancel_url: "https://unearthededucation.org/pages/registration-received",
     });
@@ -43,7 +39,7 @@ exports.handler = async (event) => {
     };
 
   } catch (error) {
-    console.error("Stripe Error:", error);
+    console.error("FULL ERROR:", error); // 👈 KEY PART
     return {
       statusCode: 500,
       body: JSON.stringify({ error: "Unable to create Stripe checkout session" }),
