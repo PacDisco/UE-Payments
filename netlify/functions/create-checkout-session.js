@@ -19,37 +19,44 @@ exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body || "{}");
 
-    const amount = body.amount;
+    const amount = Number(body.amount);
     const email = body.email;
 
-    if (!amount) {
+    if (!amount || isNaN(amount)) {
       return {
         statusCode: 400,
         headers: {
           "Access-Control-Allow-Origin": "*"
         },
-        body: JSON.stringify({ error: "Amount is required" }),
+        body: JSON.stringify({ error: "Valid amount is required" }),
       };
     }
+
+    // ✅ Add 3% processing fee
+    const totalWithFee = Math.round(amount * 1.03 * 100); // convert to cents AFTER fee
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email || undefined,
+
+      // ✅ Updated message
       custom_text: {
-    submit: {
-      message: "Total amount includes a 3% processing fee."
-    }
-  },
+        submit: {
+          message: "A 3% processing fee has been added to your total."
+        }
+      },
+
       line_items: [
         {
           price_data: {
             currency: "nzd",
             product_data: { name: "Unearthed Education Program Payment" },
-            unit_amount: Number(amount) * 100,
+            unit_amount: totalWithFee,
           },
           quantity: 1,
         },
       ],
+
       success_url: "https://unearthededucation.org/pages/registration-received",
       cancel_url: "https://unearthededucation.org/pages/registration-received",
     });
