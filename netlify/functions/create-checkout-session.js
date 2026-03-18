@@ -3,7 +3,6 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 exports.handler = async (event) => {
 
-  // Handle CORS preflight request
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -21,25 +20,31 @@ exports.handler = async (event) => {
 
     const amount = Number(body.amount);
     const email = body.email;
+    const dealId = body.dealId; // ✅ NEW
 
-    if (!amount || isNaN(amount)) {
+    if (!amount || isNaN(amount) || !dealId) { // ✅ UPDATED
       return {
         statusCode: 400,
         headers: {
           "Access-Control-Allow-Origin": "*"
         },
-        body: JSON.stringify({ error: "Valid amount is required" }),
+        body: JSON.stringify({ error: "Valid amount and dealId are required" }),
       };
     }
 
-    // ✅ Add 3% processing fee
-    const totalWithFee = Math.round(amount * 1.03 * 100); // convert to cents AFTER fee
+    const totalWithFee = Math.round(amount * 1.03 * 100);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email || undefined,
 
-      // ✅ Updated message
+      // ✅ THIS is what enables HubSpot updates later
+      metadata: {
+        dealId: dealId,
+        email: email,
+        baseAmount: amount
+      },
+
       custom_text: {
         submit: {
           message: "A 3% processing fee has been added to your total."
