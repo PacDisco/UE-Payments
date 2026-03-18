@@ -1,6 +1,9 @@
 const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
+const HUBSPOT_BASE = "https://api.hubapi.com";
+const HUBSPOT_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+
 exports.handler = async (event) => {
 
   if (event.httpMethod === "OPTIONS") {
@@ -20,25 +23,86 @@ exports.handler = async (event) => {
 
     const amount = Number(body.amount);
     const email = body.email;
-    const dealId = body.dealId; // ✅ NEW
 
-    if (!amount || isNaN(amount) || !dealId) { // ✅ UPDATED
+    if (!amount || isNaN(amount) || !email) {
       return {
         statusCode: 400,
         headers: {
           "Access-Control-Allow-Origin": "*"
         },
-        body: JSON.stringify({ error: "Valid amount and dealId are required" }),
+        body: JSON.stringify({ error: "Valid amount and email are required" }),
       };
     }
 
+    // 🔥 1. Find contact by email
+    const contactRes = await fetch(
+      `${HUBSPOT_BASE}/crm/v3/objects/contacts/search`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${HUBSPOT_TOKEN}`,
+        },
+        body: JSON.stringify({
+          filterGroups: [
+            {
+              filters: [
+                { propertyName: "email", operator: "EQ", value: email },
+              ],
+            },
+          ],
+          properties: ["email"],
+          limit: 1,
+        }),
+      }
+    );
+
+    const contactData = await contactRes.json();
+
+    if (!contactData.results || contactData.results.length === 0) {
+      return {
+        statusCode: 404,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "Contact not found in HubSpot" }),
+      };
+    }
+
+    const contactId = contactData.results[0].id;
+
+    // 🔥 2. Get deals associated with contact
+    const assocRes = await fetch(
+      `${HUBSPOT_BASE}/crm/v4/objects/contacts/${contactId}/associations/deals`,
+      {
+        headers: {
+          Authorization: `Bearer ${HUBSPOT_TOKEN}`,
+        },
+      }
+    );
+
+    const assocData = await assocRes.json();
+
+    const dealIds =
+      assocData.results?.map((r) => r.toObjectId).filter(Boolean) || [];
+
+    if (dealIds.length === 0) {
+      return {
+        statusCode: 404,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "No deals found for contact" }),
+      };
+    }
+
+    // 👉 pick first deal (can refine later)
+    const dealId = dealIds[0];
+
+    // 🔥 3. Add 3% fee
     const totalWithFee = Math.round(amount * 1.03 * 100);
 
+    // 🔥 4. Create Stripe session
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer_email: email || undefined,
+      customer_email: email,
 
-      // ✅ THIS is what enables HubSpot updates later
       metadata: {
         dealId: dealId,
         email: email,
