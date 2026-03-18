@@ -6,21 +6,21 @@ const HUBSPOT_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 
 exports.handler = async (event) => {
 
-  // Handle CORS
+  // Handle CORS (still fine to keep)
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       },
       body: "Preflight OK",
     };
   }
 
   try {
-    // ✅ Get query params from URL
+    // ✅ Read query params from URL
     const params = new URLSearchParams(event.rawUrl.split("?")[1] || "");
 
     const amount = Number(params.get("amount"));
@@ -31,8 +31,7 @@ exports.handler = async (event) => {
     if (!amount || isNaN(amount) || !email) {
       return {
         statusCode: 400,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "Valid amount and email are required" }),
+        body: "Valid amount and email are required",
       };
     }
 
@@ -71,17 +70,16 @@ exports.handler = async (event) => {
     const contactData = await contactRes.json();
 
     if (!contactData.results || contactData.results.length === 0) {
-      console.log("Contact search failed for:", email);
+      console.log("Contact not found:", email);
       return {
         statusCode: 404,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "Contact not found in HubSpot" }),
+        body: "Contact not found in HubSpot",
       };
     }
 
     const contactId = contactData.results[0].id;
 
-    // 🔗 2. Get associated deals
+    // 🔗 2. Get deals associated with contact
     const assocRes = await fetch(
       `${HUBSPOT_BASE}/crm/v4/objects/contacts/${contactId}/associations/deals`,
       {
@@ -99,15 +97,14 @@ exports.handler = async (event) => {
     if (dealIds.length === 0) {
       return {
         statusCode: 404,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "No deals found for contact" }),
+        body: "No deals found for contact",
       };
     }
 
-    // 👉 Use first deal (can refine later)
+    // 👉 Use first deal
     const dealId = dealIds[0];
 
-    // 💰 3% fee
+    // 💰 Add 3% fee
     const totalWithFee = Math.round(amount * 1.03 * 100);
 
     // 💳 Create Stripe session
@@ -144,10 +141,12 @@ exports.handler = async (event) => {
       cancel_url: "https://unearthededucation.org/pages/registration-received",
     });
 
+    // 🚀 REDIRECT DIRECTLY TO STRIPE
     return {
-      statusCode: 200,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ url: session.url }),
+      statusCode: 302,
+      headers: {
+        Location: session.url,
+      },
     };
 
   } catch (err) {
@@ -155,10 +154,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({
-        error: "Unable to create Stripe checkout session"
-      }),
+      body: "Unable to create Stripe checkout session",
     };
   }
 };
