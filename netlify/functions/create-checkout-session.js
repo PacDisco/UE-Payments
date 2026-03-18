@@ -6,6 +6,7 @@ const HUBSPOT_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 
 exports.handler = async (event) => {
 
+  // Handle CORS
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -19,22 +20,23 @@ exports.handler = async (event) => {
   }
 
   try {
-    const body = JSON.parse(event.body || "{}");
+    // ✅ Get query params from URL
+    const params = new URLSearchParams(event.rawUrl.split("?")[1] || "");
 
-    const amount = Number(body.amount);
-    const email = body.email;
+    const amount = Number(params.get("amount"));
+    let email = params.get("email");
+
+    email = (email || "").trim().toLowerCase();
 
     if (!amount || isNaN(amount) || !email) {
       return {
         statusCode: 400,
-        headers: {
-          "Access-Control-Allow-Origin": "*"
-        },
+        headers: { "Access-Control-Allow-Origin": "*" },
         body: JSON.stringify({ error: "Valid amount and email are required" }),
       };
     }
 
-    // 🔥 1. Find contact by email
+    // 🔍 1. Find contact (primary OR additional email)
     const contactRes = await fetch(
       `${HUBSPOT_BASE}/crm/v3/objects/contacts/search`,
       {
@@ -47,11 +49,20 @@ exports.handler = async (event) => {
           filterGroups: [
             {
               filters: [
-                { propertyName: "email", operator: "EQ", value: email },
-              ],
+                { propertyName: "email", operator: "EQ", value: email }
+              ]
             },
+            {
+              filters: [
+                {
+                  propertyName: "hs_additional_emails",
+                  operator: "CONTAINS_TOKEN",
+                  value: email
+                }
+              ]
+            }
           ],
-          properties: ["email"],
+          properties: ["email", "hs_additional_emails"],
           limit: 1,
         }),
       }
@@ -60,6 +71,7 @@ exports.handler = async (event) => {
     const contactData = await contactRes.json();
 
     if (!contactData.results || contactData.results.length === 0) {
+      console.log("Contact search failed for:", email);
       return {
         statusCode: 404,
         headers: { "Access-Control-Allow-Origin": "*" },
@@ -69,7 +81,7 @@ exports.handler = async (event) => {
 
     const contactId = contactData.results[0].id;
 
-    // 🔥 2. Get deals associated with contact
+    // 🔗 2. Get associated deals
     const assocRes = await fetch(
       `${HUBSPOT_BASE}/crm/v4/objects/contacts/${contactId}/associations/deals`,
       {
@@ -92,13 +104,13 @@ exports.handler = async (event) => {
       };
     }
 
-    // 👉 pick first deal (can refine later)
+    // 👉 Use first deal (can refine later)
     const dealId = dealIds[0];
 
-    // 🔥 3. Add 3% fee
+    // 💰 3% fee
     const totalWithFee = Math.round(amount * 1.03 * 100);
 
-    // 🔥 4. Create Stripe session
+    // 💳 Create Stripe session
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email,
@@ -119,7 +131,9 @@ exports.handler = async (event) => {
         {
           price_data: {
             currency: "nzd",
-            product_data: { name: "Unearthed Education Program Payment" },
+            product_data: {
+              name: "Unearthed Education Program Payment"
+            },
             unit_amount: totalWithFee,
           },
           quantity: 1,
@@ -132,9 +146,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*"
-      },
+      headers: { "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify({ url: session.url }),
     };
 
@@ -143,10 +155,10 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 500,
-      headers: {
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify({ error: "Unable to create Stripe checkout session" }),
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({
+        error: "Unable to create Stripe checkout session"
+      }),
     };
   }
 };
