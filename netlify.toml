@@ -1,2 +1,7 @@
 [build]
   functions = "netlify/functions"
+[[redirects]]
+  from = "/"
+  to = "/.netlify/functions/create-checkout-session"
+  status = 302
+  force = true
